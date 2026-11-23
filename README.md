@@ -1,18 +1,30 @@
-# ALEX Mobile v1.0 (Android PWA)
+# ALEX NBA Collectors v2.0 — Android PWA
 
-App mobile installabile da Chrome su Android, con dati locali IndexedDB. Nessun abbonamento, backend o database cloud.
+Questa build è progettata per essere pubblicata su GitHub Pages e usata da Chrome su Android. Non richiede PC, Python o app desktop per l'utilizzo quotidiano.
 
-## Pubblicazione gratuita (richiede account GitHub gratuito)
-1. Crea un repository pubblico GitHub chiamato `alex-mobile`.
-2. Carica nella root tutti i file di questa cartella.
-3. Apri Settings > Pages, scegli Deploy from a branch, `main`, `/ (root)`, Save.
-4. Quando GitHub Pages pubblica il sito HTTPS, apri l'URL da Chrome Android.
-5. Menu ⋮ > Installa app / Aggiungi a schermata Home.
+## Installazione/aggiornamento
+1. Prima di sostituire i file, apri ALEX sul telefono e fai **Settings → Backup completo JSON**.
+2. Nel repository GitHub Pages sostituisci `index.html`, `app.js`, `sw.js`, `manifest.webmanifest`, `icon-192.png`, `icon-512.png`.
+3. Apri l'app su Android e ricarica. Se vedi ancora la vecchia versione, chiudi completamente la PWA e riaprila; il service worker usa una nuova cache.
+4. Il database IndexedDB `alex_mobile` viene aggiornato alla versione 2 e mantiene gli object store esistenti `games` e `logs`.
 
-Il codice sarà pubblico nel repository, ma i dati inseriti nell'app restano nel browser del telefono e non vengono caricati su GitHub.
+## Cosa funziona in questa build
+- App mobile PWA, database locale IndexedDB.
+- Archivi distinti Match e Player Stats.
+- Match con campi espliciti `home` e `away`; quota 1 casa, quota 2 trasferta; risultato casa–trasferta.
+- Acquisizione iniziale selezionabile per le stagioni 2021-22 ... 2025-26 e aggiornamento per 2026-27.
+- Import CSV/JSON Match con upsert tramite ID e prevenzione duplicati.
+- Selezione giocatori e import CSV Player Stats.
+- Export CSV separati e backup/ripristino JSON.
+- Log attività.
 
-## Funzioni incluse
-Dashboard, Collection, Archive, Logs, Settings; inserimento manuale; quote 1 e 2 conservate nell'ordine Diretta.it; verifica manuale Bet365/closing; calcolo vincente e totale dal punteggio; prevenzione duplicati tramite ID derivato da data e squadre; CSV esattamente 11 colonne; backup e ripristino JSON; cache offline dopo il primo accesso.
+## Limite da non confondere
+Questa build NON effettua ancora il prelievo automatico live di Diretta.it o NBA Stats dal browser. GitHub Pages è hosting statico e il browser Android non può garantire il fetch cross-origin delle pagine di Diretta.it. I pulsanti import funzionano per dati esportati/forniti in CSV/JSON. Per automatizzare davvero la raccolta serve il backend/API autorizzato e il relativo endpoint; non viene simulato né dichiarato come completato.
 
-## Limiti
-Non c'è ancora raccolta automatica da Diretta.it, verifica automatica delle quote o job in background. Nessun test su 20 partite reali è stato eseguito. I dati sono solo su questo browser/dispositivo: esporta spesso il JSON. Se cancelli i dati del browser, puoi perderli.
+## Formato CSV Match
+Intestazioni riconosciute: `data`, `casa`, `trasferta`, `1`, `2`, `linea`, `over`, `under`, `risultato`, `url`. Risultato nel formato `punteggioCasa-punteggioTrasferta`. Quote 1/2 devono già essere rispettivamente casa/trasferta.
+
+## Formato CSV Player Stats
+Intestazioni riconosciute: `player`, `player id`, `date`, `team`, `min`, `pts`, `reb`, `ast`, `stl`, `blk`. Puoi includere ulteriori colonne nel CSV; queste vengono ignorate.
+
+Dati memorizzati localmente nel browser del telefono: esporta regolarmente il backup JSON.

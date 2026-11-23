@@ -1,12 +1,11 @@
 {
-  "name": "ALEX NBA Historical Collector",
+  "name": "ALEX NBA Collectors",
   "short_name": "ALEX NBA",
   "start_url": "./",
-  "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
   "background_color": "#0b1220",
   "theme_color": "#101827",
+  "lang": "it",
   "icons": [
     {
       "src": "icon-192.png",

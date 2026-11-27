@@ -7,26 +7,40 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Cerca dati partite
+      - name: Individua script calendario
         run: |
           python - <<'PY'
           import requests
-          import re
+          from html.parser import HTMLParser
+          from urllib.parse import urljoin
 
-          url = "https://www.diretta.it/basket/usa/nba/calendario/"
+          base = "https://www.diretta.it"
+          url = base + "/basket/usa/nba/calendario/"
           html = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=30).text
 
-          for term in ["participant", "eventId", "score", "team"]:
-              print("\n==========", term, "==========")
-              positions = [m.start() for m in re.finditer(term, html, re.I)]
-              for p in positions[:4]:
-                  print(html[max(0,p-500):p+1000].replace("\\n"," ")[:1500])
+          class Scripts(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.urls = []
+              def handle_starttag(self, tag, attrs):
+                  if tag == "script":
+                      src = dict(attrs).get("src")
+                      if src:
+                          self.urls.append(urljoin(base, src))
 
-          print("\n========== DATE ==========")
-          dates = re.findall(r'20\d\d-\d\d-\d\d', html)
-          print("Date trovate:", sorted(set(dates))[:40])
+          parser = Scripts()
+          parser.feed(html)
 
-          print("\n========== NOMI NBA ==========")
-          for name in ["Lakers", "Celtics", "Warriors", "Bulls", "Knicks"]:
-              print(name, html.count(name))
+          print("SCRIPT TROVATI:", len(parser.urls))
+          for script in parser.urls:
+              if any(x in script.lower() for x in ["calendar", "season", "tournament", "event", "loader", "module"]):
+                  print("\nSCRIPT:", script)
+                  try:
+                      r = requests.get(script, headers={"User-Agent":"Mozilla/5.0"}, timeout=20)
+                      print("STATUS:", r.status_code, "BYTE:", len(r.content))
+                      for term in ["pq_graphql", "tournamentStage", "eventId", "calendar"]:
+                          if term.lower() in r.text.lower():
+                              print("TROVATO:", term)
+                  except Exception as e:
+                      print("ERRORE:", str(e))
           PY

@@ -1,0 +1,182 @@
+name: ALEX NBA data collector
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 8,14,20 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alex-nba-collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Collect NBA weekly schedule and box scores
+        run: |
+          python - <<'PY'
+          import json, re, time
+          from datetime import datetime, timedelta
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          import requests
+
+          root = Path('.')
+          out = root / 'data' / 'nba_week.json'
+          out.parent.mkdir(parents=True, exist_ok=True)
+          tz = ZoneInfo('America/New_York')
+          today = datetime.now(tz).date()
+          monday = today - timedelta(days=today.weekday())
+          days = [monday + timedelta(days=i) for i in range(7)]
+          base = 'https://cdn.nba.com/static/json/liveData'
+          session = requests.Session()
+          session.headers.update({
+              'User-Agent': 'Mozilla/5.0 (compatible; ALEX-NBA-Collector/2.3)',
+              'Accept': 'application/json, text/plain, */*',
+              'Origin': 'https://www.nba.com',
+              'Referer': 'https://www.nba.com/'
+          })
+
+          def get_json(url):
+              last = None
+              for attempt in range(3):
+                  try:
+                      response = session.get(url, timeout=30)
+                      response.raise_for_status()
+                      return response.json()
+                  except Exception as exc:
+                      last = exc
+                      if attempt < 2:
+                          time.sleep(2 * (attempt + 1))
+              raise RuntimeError(f'{url}: {last}')
+
+          def season_for(day):
+              y, m = int(day[:4]), int(day[5:7])
+              return f'{y}-{str(y+1)[-2:]}' if m >= 10 else f'{y-1}-{str(y)[-2:]}'
+
+          def team_name(team):
+              return ' '.join(x for x in (team.get('teamCity'), team.get('teamName')) if x) or team.get('teamTricode', 'Team')
+
+          def to_minutes(value):
+              if not value:
+                  return None
+              value = str(value)
+              if value.startswith('PT'):
+                  match = re.match(r'PT(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?', value)
+                  if match:
+                      return round(int(match.group(1) or 0) + float(match.group(2) or 0) / 60, 2)
+              if ':' in value:
+                  try:
+                      mm, ss = value.split(':', 1)
+                      return round(int(mm) + int(ss[:2]) / 60, 2)
+                  except Exception:
+                      return None
+              try:
+                  return float(value)
+              except Exception:
+                  return None
+
+          old = {'schema': 1, 'games': [], 'playerStats': []}
+          if out.exists():
+              old = json.loads(out.read_text(encoding='utf-8'))
+          games = {str(g['id']): g for g in old.get('games', []) if g.get('id')}
+          stats = {str(s['id']): s for s in old.get('playerStats', []) if s.get('id')}
+          found = 0
+          errors = []
+          for day in days:
+              date_key = day.strftime('%Y%m%d')
+              try:
+                  payload = get_json(f'{base}/scoreboard/scoreboard_{date_key}.json')
+                  daily = payload.get('scoreboard', {}).get('games', [])
+                  for raw in daily:
+                      gid = str(raw.get('gameId') or '')
+                      if not gid:
+                          continue
+                      found += 1
+                      home, away = raw.get('homeTeam', {}), raw.get('awayTeam', {})
+                      status = int(raw.get('gameStatus') or 0)
+                      hs, aws = home.get('score'), away.get('score')
+                      final = status == 3 and hs is not None and aws is not None
+                      game_day = str(raw.get('gameEt') or raw.get('gameDate') or day.isoformat())[:10]
+                      previous = games.get(gid, {})
+                      games[gid] = {
+                          **previous, 'id': gid, 'date': game_day,
+                          'season': season_for(game_day), 'home': team_name(home), 'away': team_name(away),
+                          'homeScore': int(hs) if final else None, 'awayScore': int(aws) if final else None,
+                          'score': f'{hs}-{aws}' if final else '',
+                          'winner': ('H' if int(hs) > int(aws) else 'A' if int(hs) < int(aws) else 'T') if final else '',
+                          'total': int(hs) + int(aws) if final else None,
+                          'gameStatus': status,
+                          'statusText': raw.get('gameStatusText') or ('Finale' if final else 'In corso' if status == 2 else 'In programma'),
+                          'source': 'NBA.com official CDN via GitHub Actions',
+                          'sourceUrl': f'https://www.nba.com/game/{gid}',
+                          'updated': datetime.now(ZoneInfo('UTC')).isoformat()
+                      }
+                      if final:
+                          try:
+                              box = get_json(f'{base}/boxscore/boxscore_{gid}.json').get('game', {})
+                              for side in (box.get('homeTeam', {}), box.get('awayTeam', {})):
+                                  for player in side.get('players', []):
+                                      st = player.get('statistics', {})
+                                      mins = to_minutes(st.get('minutes'))
+                                      if mins is None or mins == 0:
+                                          continue
+                                      name = player.get('name') or ' '.join(x for x in (player.get('firstName'), player.get('familyName')) if x)
+                                      pid = str(player.get('personId') or name)
+                                      sid = f'{gid}_{pid}'
+                                      stats[sid] = {
+                                          'id': sid, 'gameId': gid, 'player': name, 'playerId': pid,
+                                          'season': season_for(game_day), 'date': game_day,
+                                          'team': side.get('teamTricode') or side.get('teamName', ''), 'min': mins,
+                                          'pts': st.get('points'), 'reb': st.get('reboundsTotal'), 'ast': st.get('assists'),
+                                          'stl': st.get('steals'), 'blk': st.get('blocks'),
+                                          'source': 'NBA.com official CDN via GitHub Actions'
+                                      }
+                              time.sleep(0.3)
+                          except Exception as exc:
+                              print(f'Box score {gid} non disponibile: {exc}')
+                  print(f'{day.isoformat()}: {len(daily)} partite')
+              except Exception as exc:
+                  errors.append(f'{day.isoformat()}: {exc}')
+                  print(errors[-1])
+              time.sleep(0.3)
+
+          if found == 0:
+              raise SystemExit('ERRORE: il feed NBA non ha restituito partite. Archivio precedente lasciato invariato. ' + ' | '.join(errors))
+
+          result = {
+              'schema': 1,
+              'updatedAt': datetime.now(ZoneInfo('UTC')).isoformat(),
+              'weekStart': days[0].isoformat(), 'weekEnd': days[-1].isoformat(),
+              'games': sorted(games.values(), key=lambda x: (x.get('date', ''), x.get('id', ''))),
+              'playerStats': sorted(stats.values(), key=lambda x: (x.get('date', ''), x.get('player', ''))),
+              'collection': {'daysRead': 7-len(errors), 'daysFailed': len(errors), 'gamesInCurrentWeek': found}
+          }
+          temp = out.with_suffix('.tmp')
+          temp.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+          temp.replace(out)
+          print(f'OK: {found} partite questa settimana; archivio totale {len(result["games"])} partite e {len(result["playerStats"])} statistiche giocatore.')
+          if errors:
+              print('ATTENZIONE: giorni non letti: ' + ' | '.join(errors))
+          PY
+      - name: Commit updated NBA archive
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/nba_week.json
+          if git diff --cached --quiet; then
+            echo "No archive changes"
+          else
+            git commit -m "Update NBA data archive"
+            git push
+          fi

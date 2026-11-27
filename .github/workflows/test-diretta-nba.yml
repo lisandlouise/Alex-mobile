@@ -1,4 +1,5 @@
-name: Test Diretta NBA
+
+name: Analisi completa Diretta NBA
 
 on:
   workflow_dispatch:
@@ -7,40 +8,115 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Individua script calendario
+      - name: Analizza caricamento calendario NBA
         run: |
           python - <<'PY'
+          import re
           import requests
-          from html.parser import HTMLParser
           from urllib.parse import urljoin
 
-          base = "https://www.diretta.it"
-          url = base + "/basket/usa/nba/calendario/"
-          html = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=30).text
+          BASE = "https://www.diretta.it"
+          PAGE = BASE + "/basket/usa/nba/calendario/"
 
-          class Scripts(HTMLParser):
-              def __init__(self):
-                  super().__init__()
-                  self.urls = []
-              def handle_starttag(self, tag, attrs):
-                  if tag == "script":
-                      src = dict(attrs).get("src")
-                      if src:
-                          self.urls.append(urljoin(base, src))
+          headers = {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+              "Referer": BASE + "/"
+          }
 
-          parser = Scripts()
-          parser.feed(html)
+          s = requests.Session()
+          s.headers.update(headers)
 
-          print("SCRIPT TROVATI:", len(parser.urls))
-          for script in parser.urls:
-              if any(x in script.lower() for x in ["calendar", "season", "tournament", "event", "loader", "module"]):
-                  print("\nSCRIPT:", script)
-                  try:
-                      r = requests.get(script, headers={"User-Agent":"Mozilla/5.0"}, timeout=20)
-                      print("STATUS:", r.status_code, "BYTE:", len(r.content))
-                      for term in ["pq_graphql", "tournamentStage", "eventId", "calendar"]:
-                          if term.lower() in r.text.lower():
-                              print("TROVATO:", term)
-                  except Exception as e:
-                      print("ERRORE:", str(e))
+          print("=== PAGINA CALENDARIO ===")
+          r = s.get(PAGE, timeout=30)
+          print("STATUS:", r.status_code, "BYTE:", len(r.content))
+          r.raise_for_status()
+          html = r.text
+
+          patterns = [
+              r'pq_graphql',
+              r'tournamentStage',
+              r'eventId',
+              r'operationName',
+              r'persistedQuery',
+              r'graphql',
+              r'fetch\(',
+              r'XMLHttpRequest',
+              r'calendar',
+              r'eventList',
+              r'event.*list',
+              r'loader'
+          ]
+
+          script_urls = set(
+              urljoin(PAGE, x)
+              for x in re.findall(
+                  r'<script[^>]+src=["\']([^"\']+)',
+                  html,
+                  re.I
+              )
+          )
+
+          known = [
+              BASE + "/res/_fs/build/loader.CIa_rIM.js",
+              BASE + "/res/_fs/build/modules.D5yKO3u.js",
+              BASE + "/res/_fs/build/tournamentPage.client.DuP0AMp.js",
+              BASE + "/res/_fs/build/globalEvents.BtYXVPA.js"
+          ]
+
+          script_urls.update(known)
+
+          print("SCRIPT TROVATI:", len(script_urls))
+
+          all_sources = [("HTML CALENDARIO", html)]
+
+          for url in sorted(script_urls):
+              try:
+                  x = s.get(url, timeout=30)
+                  print("\nSCRIPT:", url)
+                  print("STATUS:", x.status_code, "BYTE:", len(x.content))
+                  if x.status_code == 200 and len(x.text) > 100:
+                      all_sources.append((url, x.text))
+              except Exception as e:
+                  print("ERRORE:", str(e))
+
+          print("\n=== FRAMMENTI RILEVANTI ===")
+
+          total = 0
+          seen = set()
+
+          for source_name, source in all_sources:
+              for pattern in patterns:
+                  for m in re.finditer(pattern, source, re.I):
+                      start = max(0, m.start() - 500)
+                      end = min(len(source), m.end() + 900)
+                      snippet = source[start:end]
+                      key = (source_name, snippet[:250])
+
+                      if key in seen:
+                          continue
+                      seen.add(key)
+
+                      print("\n---", source_name, "| MATCH:", pattern, "---")
+                      print(snippet.replace("\n", " ")[:1500])
+                      total += 1
+
+                      if total >= 45:
+                          break
+                  if total >= 45:
+                      break
+              if total >= 45:
+                  break
+
+          print("\nTOTALE FRAMMENTI:", total)
+
+          print("\n=== CONFIGURAZIONE TORNEO ===")
+          for term in ["Y3dZcbdf", "Ei5R5XBM"]:
+              pos = html.find(term)
+              print(term, "PRESENTE:", pos >= 0)
+              if pos >= 0:
+                  print(html[max(0,pos-350):pos+500])
+
+          print("\n=== FINE ANALISI ===")
           PY

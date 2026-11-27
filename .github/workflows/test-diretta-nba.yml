@@ -7,53 +7,26 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Analizza HTML Diretta NBA
+      - name: Cerca dati partite
         run: |
           python - <<'PY'
           import requests
           import re
-          from collections import Counter
 
           url = "https://www.diretta.it/basket/usa/nba/calendario/"
-          html = requests.get(
-              url,
-              headers={"User-Agent": "Mozilla/5.0"},
-              timeout=30
-          ).text
+          html = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=30).text
 
-          print("BYTE:", len(html))
+          for term in ["participant", "eventId", "score", "team"]:
+              print("\n==========", term, "==========")
+              positions = [m.start() for m in re.finditer(term, html, re.I)]
+              for p in positions[:4]:
+                  print(html[max(0,p-500):p+1000].replace("\\n"," ")[:1500])
 
-          patterns = [
-              "event__match",
-              "eventId",
-              "event_id",
-              "data-event-id",
-              "participant",
-              "event",
-              "match",
-              "team",
-              "score",
-              "calendar",
-          ]
+          print("\n========== DATE ==========")
+          dates = re.findall(r'20\d\d-\d\d-\d\d', html)
+          print("Date trovate:", sorted(set(dates))[:40])
 
-          for p in patterns:
-              print(f"\n{p}: {html.lower().count(p.lower())}")
-
-          print("\n--- LINK PARTITE TROVATI ---")
-          links = re.findall(r'href=["\']([^"\']+)["\']', html)
-          found = [
-              x for x in links
-              if "partita" in x.lower()
-              or "/match/" in x.lower()
-              or "/basket/" in x.lower()
-          ]
-
-          for x in list(dict.fromkeys(found))[:30]:
-              print(x)
-
-          print("\n--- ESTRATTI HTML ---")
-          for p in ["event__match", "eventId", "data-event-id"]:
-              pos = html.lower().find(p.lower())
-              if pos >= 0:
-                  print("\n", html[max(0, pos-250):pos+500])
+          print("\n========== NOMI NBA ==========")
+          for name in ["Lakers", "Celtics", "Warriors", "Bulls", "Knicks"]:
+              print(name, html.count(name))
           PY

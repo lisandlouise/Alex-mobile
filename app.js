@@ -23,42 +23,34 @@ function nbaDateISO(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padSt
 function currentWeekRange(){const t=new Date(),start=new Date(t);start.setHours(12,0,0,0);start.setDate(t.getDate()-((t.getDay()+6)%7));const end=new Date(start);end.setDate(start.getDate()+6);return{start,end}}
 function updateWeekLabel(){const r=currentWeekRange(),fmt=d=>d.toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric"});const el=$("weekRangeLabel");if(el)el.textContent=`Settimana selezionata: ${fmt(r.start)} – ${fmt(r.end)} (lun–dom)`}
 
-async function nbaFetchJson(url){let r=await fetch(url,{method:"GET",mode:"cors",cache:"no-store",headers:{"Accept":"application/json"}});if(!r.ok)throw Error(`NBA feed HTTP ${r.status}`);return r.json()}
-function nbaTeamName(t){return [t?.teamCity,t?.teamName].filter(Boolean).join(" ")||t?.teamTricode||"Squadra non identificata"}
-function nbaMinutes(v){if(v===null||v===undefined||v==="")return null;let s=String(v);let m=s.match(/PT(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?/);if(m)return (Number(m[1]||0)+Number(m[2]||0)/60).toFixed(2);m=s.match(/^(\d+):(\d{2})/);if(m)return (Number(m[1])+Number(m[2])/60).toFixed(2);let n=Number(s);return Number.isFinite(n)?n:null}
 async function collectCurrentWeekNBA(){
  const btn=$("collectWeekButton"),status=$("collectorStatus");if(btn)btn.disabled=true;
  const say=t=>{if(status)status.textContent=t};
- const range=currentWeekRange(),found=new Map();let failedDays=0;
  try{
-  updateWeekLabel();say("Cerco il calendario NBA della settimana corrente…");
-  for(let d=new Date(range.start);d<=range.end;d.setDate(d.getDate()+1)){
-   const day=new Date(d),key=nbaDateKey(day),iso=nbaDateISO(day);
-   try{const data=await nbaFetchJson(`https://cdn.nba.com/static/json/liveData/scoreboard/scoreboard_${key}.json`);for(const g of (data?.scoreboard?.games||[])){if(g.gameId)found.set(String(g.gameId),{...g,_requestedDate:iso})}}
-   catch(e){failedDays++;}
+  updateWeekLabel();say("Leggo l'archivio NBA pubblicato da GitHub Actions…");
+  const url=`./data/nba_week.json?updated=${Date.now()}`;
+  const response=await fetch(url,{cache:"no-store",headers:{"Accept":"application/json"}});
+  if(!response.ok)throw Error(`Archivio remoto non ancora pubblicato (HTTP ${response.status}). Avvia prima il workflow GitHub Actions “ALEX NBA data collector”.`);
+  const payload=await response.json();
+  if(!payload||!Array.isArray(payload.games))throw Error("Il file NBA remoto non contiene l'elenco delle partite.");
+  const range=currentWeekRange(),from=nbaDateISO(range.start),to=nbaDateISO(range.end);
+  const games=payload.games.filter(g=>g.date>=from&&g.date<=to);
+  if(!games.length)throw Error(`Archivio letto, ma non contiene partite tra ${from} e ${to}. Controlla il workflow GitHub Actions.`);
+  let added=0,updated=0,statAdded=0,statUpdated=0;
+  for(const g of games){
+   const old=await get("games",String(g.id));
+   const merged={...old,...g,id:String(g.id),oddsHome:old?.oddsHome??null,oddsAway:old?.oddsAway??null,totalLine:old?.totalLine??null,overOdds:old?.overOdds??null,underOdds:old?.underOdds??null,bookmaker:old?.bookmaker||"Bet365",oddsUrl:old?.oddsUrl||"",oddsSource:old?.oddsSource||"",oddsUpdated:old?.oddsUpdated||null,created:old?.created||now(),updated:now()};
+   await put("games",merged);if(old)updated++;else added++;
   }
-  const games=[...found.values()].sort((a,b)=>String(a.gameTimeUTC||a.gameEt||a.gameDate||a._requestedDate).localeCompare(String(b.gameTimeUTC||b.gameEt||b.gameDate||b._requestedDate)));
-  if(!games.length)throw Error("Il feed NBA non ha restituito partite per questa settimana. Verifica la connessione del telefono e riprova.");
-  let saved=0,finals=0,scheduled=0,live=0,savedPlayers=0,failedBoxes=0,updated=0;
-  for(let i=0;i<games.length;i++){
-   const g=games[i],gameId=String(g.gameId),st=Number(g.gameStatus||0),isFinal=st===3,isLive=st===2;
-   const rawDate=String(g.gameEt||g.gameDate||g.gameTimeUTC||g._requestedDate||"");const date=rawDate.slice(0,10)||g._requestedDate;
-   const home=nbaTeamName(g.homeTeam),away=nbaTeamName(g.awayTeam);
-   const hRaw=g.homeTeam?.score,aRaw=g.awayTeam?.score,hs=hRaw===null||hRaw===undefined||hRaw===""?null:Number(hRaw),as=aRaw===null||aRaw===undefined||aRaw===""?null:Number(aRaw);
-   const validScore=isFinal&&Number.isFinite(hs)&&Number.isFinite(as);
-   const game={id:gameId,date,season:seasonForDate(date),home,away,oddsHome:null,oddsAway:null,totalLine:null,overOdds:null,underOdds:null,score:validScore?`${hs}-${as}`:"",homeScore:validScore?hs:null,awayScore:validScore?as:null,winner:validScore?(hs>as?"H":hs<as?"A":"T"):"",total:validScore?hs+as:null,bookmaker:"Bet365",source:"NBA.com official CDN",closingStatus:"QUOTE_DA_INSERIRE",gameStatus:st,statusText:g.gameStatusText|| (isFinal?"Finale":isLive?"In corso":"In programma"),sourceUrl:`https://www.nba.com/game/${gameId}`,updated:now()};
-   const old=await get("games",game.id);await put("games",{...old,...game,oddsHome:old?.oddsHome??null,oddsAway:old?.oddsAway??null,totalLine:old?.totalLine??null,overOdds:old?.overOdds??null,underOdds:old?.underOdds??null,bookmaker:old?.bookmaker||"Bet365",oddsUrl:old?.oddsUrl||"",oddsSource:old?.oddsSource||"",oddsUpdated:old?.oddsUpdated||null,created:old?.created||now()});saved++;if(old)updated++;
-   if(isFinal&&validScore){finals++;
-    try{const box=await nbaFetchJson(`https://cdn.nba.com/static/json/liveData/boxscore/boxscore_${gameId}.json`),bg=box?.game;if(!bg)throw Error("Box score non disponibile");
-     for(const side of [bg.homeTeam,bg.awayTeam])for(const pl of (side?.players||[])){const stats=pl.statistics||{},mins=nbaMinutes(stats.minutes);if(mins===null||Number(mins)===0)continue;const player=pl.name||[pl.firstName,pl.familyName].filter(Boolean).join(" ")||"Giocatore",id=`${gameId}_${pl.personId||slug(player)}`;await put("playerStats",{id,gameId,player,playerId:String(pl.personId||""),season:seasonForDate(date),date,team:side.teamTricode||side.teamName||"",min:mins,pts:numOrNull(stats.points),reb:numOrNull(stats.reboundsTotal),ast:numOrNull(stats.assists),stl:numOrNull(stats.steals),blk:numOrNull(stats.blocks),source:"NBA.com official CDN",updated:now()});savedPlayers++}
-    }catch(e){failedBoxes++}
-   }else if(isLive)live++;else scheduled++;
-   say(`Settimana NBA: ${i+1}/${games.length} partite elaborate · ${finals} concluse · ${scheduled} in programma · ${live} in corso`);
+  for(const st of (payload.playerStats||[]).filter(x=>x.date>=from&&x.date<=to)){
+   const old=await get("playerStats",String(st.id));
+   await put("playerStats",{...old,...st,id:String(st.id),updated:now()});if(old)statUpdated++;else statAdded++;
   }
-  await log(`Collector settimana NBA: ${saved} partite (${finals} concluse, ${scheduled} in programma, ${live} in corso), ${savedPlayers} righe giocatore, ${updated} aggiornate, ${failedBoxes} box score non disponibili, ${failedDays} giorni non letti`);
-  say(`Completato: ${saved} partite salvate (${finals} concluse, ${scheduled} in programma, ${live} in corso) · ${savedPlayers} righe giocatore · ${failedBoxes} box score non disponibili · ${failedDays} giorni non letti. Quote prematch da inserire nelle singole schede.`);
+  await log(`Import archivio NBA remoto ${from}–${to}: ${added} nuove, ${updated} aggiornate, ${statAdded} nuove righe player, ${statUpdated} aggiornate`);
+  const stamp=payload.updatedAt?new Date(payload.updatedAt).toLocaleString("it-IT"):"data non indicata";
+  say(`Importazione completata. ${games.length} partite della settimana · ${added} nuove · ${updated} aggiornate · ${statAdded} nuove righe statistiche giocatori. Archivio remoto aggiornato: ${stamp}. Quote prematch da inserire nelle schede.`);
   await renderMatches();await renderPlayers();await home();
- }catch(e){say(`Raccolta non completata: ${e.message} Nessun dato fittizio è stato inserito.`)}
+ }catch(e){say(`Importazione non completata: ${e.message}`)}
  finally{if(btn)btn.disabled=false}
 }
 

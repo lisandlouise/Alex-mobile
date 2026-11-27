@@ -1,0 +1,26 @@
+name: Test Diretta NBA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verifica accesso a Diretta.it
+        run: |
+          python - <<'PY'
+          import requests
+          from html.parser import HTMLParser
+
+          url = "https://www.diretta.it/basket/usa/nba/calendario/"
+          r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+
+          print("URL:", r.url)
+          print("STATUS:", r.status_code)
+          print("CONTENT TYPE:", r.headers.get("content-type"))
+          print("BYTE RICEVUTI:", len(r.content))
+          print("TITOLO:", r.text[:1000].split("<title>")[-1].split("</title>")[0] if "<title>" in r.text else "non trovato")
+
+          r.raise_for_status()
+          PY

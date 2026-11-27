@@ -1,0 +1,41 @@
+name: ALEX — Diretta.it NBA (partite, risultati, Bet365)
+on:
+  workflow_dispatch:
+    inputs:
+      from_date:
+        description: 'Data iniziale YYYY-MM-DD (vuoto = ultimi 7 giorni)'
+        required: false
+        type: string
+      to_date:
+        description: 'Data finale YYYY-MM-DD (vuoto = oggi)'
+        required: false
+        type: string
+  schedule:
+    - cron: '25 9 * * *'
+permissions:
+  contents: write
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Raccogli partite, risultati e quote Bet365 da Diretta.it
+        env:
+          FROM_DATE: ${{ inputs.from_date }}
+          TO_DATE: ${{ inputs.to_date }}
+        run: |
+          args=()
+          [ -n "$FROM_DATE" ] && args+=(--from "$FROM_DATE")
+          [ -n "$TO_DATE" ] && args+=(--to "$TO_DATE")
+          python scripts/collect_diretta_nba.py "${args[@]}"
+      - name: Commit archivio ALEX
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/diretta_nba.json
+          git diff --cached --quiet || git commit -m "Aggiorna archivio NBA Diretta.it e quote Bet365"
+          git push

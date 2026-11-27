@@ -1,30 +1,27 @@
-# ALEX NBA Collectors v2.0 — Android PWA
+# ALEX NBA Mobile Collectors v2.2
 
-Questa build è progettata per essere pubblicata su GitHub Pages e usata da Chrome su Android. Non richiede PC, Python o app desktop per l'utilizzo quotidiano.
+Aggiornamento mobile PWA: collector calendario settimanale e inserimento quote prematch per singola partita.
 
-## Installazione/aggiornamento
-1. Prima di sostituire i file, apri ALEX sul telefono e fai **Settings → Backup completo JSON**.
-2. Nel repository GitHub Pages sostituisci `index.html`, `app.js`, `sw.js`, `manifest.webmanifest`, `icon-192.png`, `icon-512.png`.
-3. Apri l'app su Android e ricarica. Se vedi ancora la vecchia versione, chiudi completamente la PWA e riaprila; il service worker usa una nuova cache.
-4. Il database IndexedDB `alex_mobile` viene aggiornato alla versione 2 e mantiene gli object store esistenti `games` e `logs`.
+## Uso da telefono Android
+1. Fai prima **Settings → Backup completo JSON** nella versione già installata.
+2. Aggiorna i file del sito/PWA con quelli di questa cartella (oppure sostituisci i file nel repository GitHub Pages che ospita già ALEX).
+3. Chiudi completamente ALEX/Chrome e riapri la PWA per caricare la nuova cache.
+4. Apri **Match → Raccogli tutte le partite di questa settimana**.
+5. Per le quote, apri la scheda di ogni partita, consulta Diretta.it e inserisci Moneyline casa/trasferta, linea totale, Over, Under, bookmaker e URL della scheda; premi **Salva quote**.
 
-## Cosa funziona in questa build
-- App mobile PWA, database locale IndexedDB.
-- Archivi distinti Match e Player Stats.
-- Match con campi espliciti `home` e `away`; quota 1 casa, quota 2 trasferta; risultato casa–trasferta.
-- Acquisizione iniziale selezionabile per le stagioni 2021-22 ... 2025-26 e aggiornamento per 2026-27.
-- Import CSV/JSON Match con upsert tramite ID e prevenzione duplicati.
-- Selezione giocatori e import CSV Player Stats.
-- Export CSV separati e backup/ripristino JSON.
-- Log attività.
+## Funzioni
+- Calendario NBA della settimana corrente (lunedì-domenica), incluse partite concluse, in corso e programmate, tramite feed pubblico NBA CDN.
+- Per le partite concluse, tentativo di recupero del box score e delle statistiche individuali dal feed NBA.
+- Aggiornamento per ID partita: le partite già presenti vengono aggiornate senza duplicarle e le quote già inserite vengono conservate.
+- Inserimento assistito delle quote prematch per ogni partita: Moneyline casa/trasferta, linea totale, Over, Under, bookmaker e link della scheda Diretta.it.
+- Export CSV aggiornato con quote, fonte, URL, stato partita e risultato.
+- Database IndexedDB locale, backup e ripristino JSON.
 
-## Limite da non confondere
-Questa build NON effettua ancora il prelievo automatico live di Diretta.it o NBA Stats dal browser. GitHub Pages è hosting statico e il browser Android non può garantire il fetch cross-origin delle pagine di Diretta.it. I pulsanti import funzionano per dati esportati/forniti in CSV/JSON. Per automatizzare davvero la raccolta serve il backend/API autorizzato e il relativo endpoint; non viene simulato né dichiarato come completato.
+## Limiti importanti
+- Il feed NBA fornisce calendario, punteggi e box score, **non** quote bookmaker.
+- Le quote Diretta.it in questa build si inseriscono manualmente nell'app dopo averle consultate. Non viene effettuato scraping automatico del sito.
+- Il feed NBA CDN può essere bloccato dal browser/rete tramite CORS. Se la richiesta fallisce, l'app mostra l'errore e non inventa dati.
+- Le quote salvate vanno riferite al bookmaker indicato e alla fase prematch; non confondere una quota di un altro bookmaker con Bet365.
 
-## Formato CSV Match
-Intestazioni riconosciute: `data`, `casa`, `trasferta`, `1`, `2`, `linea`, `over`, `under`, `risultato`, `url`. Risultato nel formato `punteggioCasa-punteggioTrasferta`. Quote 1/2 devono già essere rispettivamente casa/trasferta.
-
-## Formato CSV Player Stats
-Intestazioni riconosciute: `player`, `player id`, `date`, `team`, `min`, `pts`, `reb`, `ast`, `stl`, `blk`. Puoi includere ulteriori colonne nel CSV; queste vengono ignorate.
-
-Dati memorizzati localmente nel browser del telefono: esporta regolarmente il backup JSON.
+## Dati locali
+I dati restano nel browser del telefono (IndexedDB). Esporta regolarmente il backup JSON, soprattutto prima di aggiornare la PWA.
